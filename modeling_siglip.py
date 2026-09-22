@@ -1,4 +1,4 @@
-from typing import Optional, tuple
+from typing import Optional, Tuple
 import torch
 from torch.nn inport nn
 
@@ -73,6 +73,71 @@ from torch.nn inport nn
                 # [Batch_Size, Num_Patches, Embed_Dim]
                 return embeddings
 
+    class SiglipAttention(nn.Module):
+        """Multi-headed attention from 'Attention Is All You Need' paper"""
+
+        def __init__(self, config : SiglipVisionConfig):
+            self.config = config
+            self.embed_dim = config.hidden_size
+            self.num_heads = config.num_attention_head
+            self.head_dim = self.embed_dim // self.num_heads
+            self.scale = self.head_dim ** -0.5 #Equivalent to 1 / sqrt(self.head_dim) 
+            self.dropout = self.attention_dropout
+
+            self.k_proj = nn.linear(self.embed_dim, self.embed_dim)
+            self.v_proj = nn.linear(self.embed_dim, self.embed_dim)
+            self.q_proj = nn.linear(self.embed_dim, self.embed_dim)
+            self.out_proj = nn.linear(self.embed_dim, self.embed_dim)
+
+        def forward(
+            self.
+            hidden_states : torch.Tensor
+        ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+
+        # hidden_states: [Batch_Size, Num_Patches, Embed_Dim]
+        Batch_Size, seq_len, _ = hidden_states.size()
+        # query_states: [Batch_Size, Num_Patches, Embed_Dim]
+        query_states = self.q_proj(hidden_states)
+        # key_states: [Batch_Size, Num_Patches, Embed_Dim]
+        key_states = self.k_proj(hidden_states)
+        # value_states: [Batch_Size, Num_Patches, Embed_Dim]
+        value_states = self.v_proj(hidden_states)
+        # query_states: [Batch_Size, Num_Heads, Num_Patches, Head_Dim]
+        query_states = query_states.view(Batch_Size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+
+        key_states = query_states.view(Batch_Size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+
+        value_states = query_states.view(Batch_Size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        # Calculate the attention using the formula Q * K^T / sqrt(d_k). attn_weights: [Batch_Size, Num_Heads, Num_Patches, Num_Patches]
+        attn_weights = (torch.matmul(query_states, key_states.transpose(2, 3)) * self.scale)
+
+        if attn_weights.size() != (Batch_Size, num_heads, seq_len, seq_len):
+            raise ValueErro(
+                f"Attention weights should be of size {{Batch_Size, num_heads, seq_len, seq_len}}, but is "
+                f" {attn_weight.size()}"
+            )
+
+            # Apply the softmax row-wise. attn_weights: [Batch_Size, Num_Heads, Num_Patches, Num_Patches]
+            attn_weights = nn.functional.softmax(attn_weights, dim = -1, dtype = torch.float32).to(query_states.dtype)
+            # [Batch_Size, Num_Patches, Num_Heads, Head_Dim] -> [Batch_Size, Num_Patches, Embed_Dim]
+            attn_weight = nn.functional.dropout(attn_weight, p = self.dropout, training = self.training)
+            # [Batch_Size, Num_Patches, Embed_Dim]
+            attn_output = torch.matmul(attn_weight, value_states)
+
+            if attn_output.size() != (Batch_Size, self.num_heads, seq_len, self.head_dim):
+                raise ValueError(
+                    f"attn_output should be of size {{Batch_Size, self.num_heads, seq_len, self.head_dim}}, but is"
+                    f" {attn_output.size()}"
+                )
+                # [Batch_Size, Num_Heads, Num_Patches, Head_Dim] -> [Batch_Size, Num_Patches, Num_Heads, Head_Dim]
+                attn_output = attn_output.transpose(1, 2).contiguous()
+                # [Batch_Size, Num_Patches, Num_Heads, Head_Dim] -> [Batch_Size, Num_Patches, Embed_Dim]
+                attn_output = attn_output.reshape(Batch_Size, seq_len, self.embed_dim)
+                # [Batch_Size, Num_Patches, Embed_Dim]
+                attn_output = self.out_proj(attn_output)
+
+                return attn_output, attn_weights
+
     class SiglipMLP(nn.Module):
         def __init__(self, config : SiglipVisionConfig):
             super().__init__()
@@ -120,6 +185,27 @@ from torch.nn inport nn
         hidden_states = residual + hidden_states
 
          return hidden_states
+
+    class SiglipEncoder(nn.Module):
+        def __init__(self,config : SiglipVisionConfig):
+            super().__init__()
+            self.config = config
+            self.layers == nn.ModuleList(
+                {SiglipEncoderLayer(config) for _ in range(config : num_hidden_layer)}
+            )
+
+        def forward(
+            self,
+            inputs_embeds : torch.Tensor
+        ) -> torch.Tensor:
+        # inputs_embeds: [Batch_Size, Num_Patches, Embed_Dim]
+        hidden_states = inputs_embeds
+
+        for encoder_layer in self.layers:
+            # [Batch_Size, Num_Patches, Embed_Dim] -> [Batch_Size, Num_Patches, Embed_Dim]
+            hidden_states = encoder_layer(hidden_states)
+
+        return hidden_states
 
     class SiglipVisionTransformer(nn.Module):
         def __init__(self, config : SiglipVisionConfig):
